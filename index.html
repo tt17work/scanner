@@ -1,0 +1,224 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Report Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"], button {
+            margin-bottom: 10px;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #preview {
+            max-width: 100%;
+            margin-bottom: 10px;
+            display: none;
+        }
+        #report {
+            display: none;
+            border-top: 2px solid #ccc;
+            padding-top: 20px;
+        }
+        .report-section {
+            margin-bottom: 15px;
+        }
+        .report-section h3 {
+            color: #555;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        .report-section p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Medical Report Generator</h1>
+        <div class="section">
+            <label for="imageInput">Upload Assessment Image:</label>
+            <input type="file" id="imageInput" accept="image/*" onchange="previewImage(event)">
+            <img id="preview" alt="Image Preview">
+        </div>
+        <button onclick="generateReport()">Generate Report</button>
+        <div id="report">
+            <h2>Generated Medical Report</h2>
+            <div class="report-section">
+                <h3>Referral Details</h3>
+                <p><strong>Referred on:</strong> <span id="referredOn">28/5/2025</span></p>
+                <p><strong>Diagnosis:</strong> <span id="diagnosis">Subarachnoid hemorrhage, Dementia, HT, COPD</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Reason for Referral</h3>
+                <p><span id="reasonForReferral">Slip + fall in workplace</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Clinical Information</h3>
+                <p><span id="clinicalInfo">"E" admitted 27/5/2025 on 27/5/2025 for CVA</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Premorbid Social Status</h3>
+                <p><strong>Social support:</strong> <span id="socialSupport">Alone</span></p>
+                <p><strong>Life role:</strong> <span id="lifeRole">Homemaker</span></p>
+                <p><strong>Attendant:</strong> <span id="attendant">Nil</span></p>
+                <p><strong>Premorbid ADL:</strong> <span id="premorbidADL">Grooming, Dressing, Toileting, Bathing</span></p>
+                <p><strong>Premorbid IADL:</strong> <span id="premorbidIADL"></span></p>
+                <p><strong>Activity level:</strong> <span id="activityLevel">Outdoor (regular/occasional)</span></p>
+                <p><strong>Mobility status:</strong> Indoor - <span id="mobilityIndoor">Unaided</span>, Outdoor - <span id="mobilityOutdoor">Unaided</span></p>
+                <p><strong>Community Service:</strong> <span id="communityService">Homehelper</span></p>
+                <p><strong>Financial status:</strong> <span id="financialStatus">Self support</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Home Environment</h3>
+                <p><strong>Accommodation:</strong> <span id="accommodation">Public housing estate</span></p>
+                <p><strong>Accessibility:</strong> <span id="accessibility">Lift-landing</span></p>
+                <p><strong>Toilet:</strong> <span id="toilet">Sitting</span></p>
+                <p><strong>Handrails:</strong> <span id="handrails"></span></p>
+                <p><strong>Bathroom:</strong> <span id="bathroom">Shower, Hot water system</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Progress</h3>
+                <p><strong>Initial assessment / Re-assessment done at (time):</strong> <span id="assessmentTime"></span></p>
+                <h4>Observation Examination</h4>
+                <p><strong>Vital signs:</strong> <span id="vitalSigns">Stable, Afebrile</span></p>
+                <p><strong>BP:</strong> <span id="bp">___ / ___ mmHg</span>, <strong>HR:</strong> <span id="hr">____ bpm</span></p>
+                <p><strong>SpO2:</strong> <span id="spo2">____ % on room air</span></p>
+                <p><strong>Level of consciousness:</strong> <span id="consciousness">Alert</span></p>
+                <p><strong>Followed command:</strong> <span id="followedCommand">Verbal command / 1-step command / gestural command</span></p>
+                <p><strong>Vision:</strong> <span id="vision"></span></p>
+                <p><strong>Hearing:</strong> <span id="hearing"></span></p>
+                <p><strong>Speech:</strong> <span id="speech"></span></p>
+                <p><strong>Chief complaint:</strong> <span id="chiefComplaint"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Physical Examination</h3>
+                <p><strong>Limbs power:</strong> Upper limb - Left: <span id="upperLimbLeft">5</span>, Right: <span id="upperLimbRight">5</span></p>
+                <p>Lower limb - Left: <span id="lowerLimbLeft">5</span>, Right: <span id="lowerLimbRight">5</span></p>
+                <p><strong>MMT:</strong> <span id="mmt"></span></p>
+                <p><strong>Muscle tone:</strong> Upper limb - Left: <span id="muscleToneULLeft">NAD</span>, Right: <span id="muscleToneULRight">NAD</span></p>
+                <p>Lower limb - Left: <span id="muscleToneLLLeft">NAD</span>, Right: <span id="muscleToneLLRight">NAD</span></p>
+                <p><strong>AROM:</strong> Upper limb - Left: S: <span id="aromULLeftS">Intact</span>, E: <span id="aromULLeftE">Intact</span>, W: <span id="aromULLeftW">Intact</span></p>
+                <p>Right: S: <span id="aromULRightS">Intact</span>, E: <span id="aromULRightE">Intact</span>, W: <span id="aromULRightW">Intact</span></p>
+                <p>Lower limb - Left: H: <span id="aromLLLeftH">Intact</span>, K: <span id="aromLLLeftK">Intact</span>, A: <span id="aromLLLeftA">Intact</span></p>
+                <p>Right: H: <span id="aromLLRightH">Intact</span>, K: <span id="aromLLRightK">Intact</span>, A: <span id="aromLLRightA">Intact</span></p>
+                <p><strong>Sensation:</strong> <span id="sensation"></span></p>
+                <p><strong>Sitting balance (Static):</strong> <span id="sittingBalanceStatic"></span>, (Dynamic): <span id="sittingBalanceDynamic">dyn</span></p>
+                <p><strong>Standing balance (Static):</strong> <span id="standingBalanceStatic"></span>, (Dynamic): <span id="standingBalanceDynamic">dyn</span></p>
+                <p><strong>Functional Mobility:</strong> Bed mobility: <span id="bedMobility">Supervision</span></p>
+                <p>Lying <-> sitting: <span id="lyingSitting">Supervision</span></p>
+                <p>Bed <-> chair: <span id="bedChair">Minimal assistance</span></p>
+                <p>Sit <-> stand: <span id="sitStand">Independent</span></p>
+            </div>
+            <div class="report-section">
+                <h3>Activities of Daily Living</h3>
+                <p><strong>Modified Barthel Index (MBI):</strong> <span id="mbi">62 / 100</span></p>
+                <p><strong>Feeding:</strong> <span id="feeding">10 / 10 Independent</span></p>
+                <p><strong>Grooming:</strong> <span id="grooming">3 / 5 Moderate assistance</span></p>
+                <p><strong>Dressing:</strong> <span id="dressing">8 / 10 Supervision</span></p>
+                <p><strong>Toileting:</strong> <span id="toileting">10 / 10 Independent</span></p>
+                <p><strong>Bathing:</strong> <span id="bathing">0 / 5 Dependent</span></p>
+                <p><strong>Bed/chair transfers:</strong> <span id="bedChairTransfers">3 / 15 Maximal assistance</span></p>
+                <p><strong>Ambulation:</strong> <span id="ambulation">8 / 15 Moderate assistance with Unaided</span></p>
+                <p><strong>Stairs:</strong> <span id="stairs">5 / 10 Minimal assistance</span></p>
+                <p><strong>Bowel Control:</strong> <span id="bowelControl">10 / 10 Independent</span></p>
+                <p><strong>Bladder Control:</strong> <span id="bladderControl">10 / 10 Independent</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function previewImage(event) {
+            const preview = document.getElementById('preview');
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function generateReport() {
+            const reportDiv = document.getElementById('report');
+            reportDiv.style.display = 'block';
+            window.scrollTo(0, reportDiv.offsetTop);
+        }
+    </script>
+</body>
+</html>
