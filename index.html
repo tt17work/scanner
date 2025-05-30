@@ -1,0 +1,473 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Report Generator with OCR</title>
+    <script src="https://unpkg.com/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"], button {
+            margin-bottom: 10px;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .preview {
+            max-width: 100%;
+            margin-bottom: 10px;
+            display: none;
+        }
+        #report {
+            display: none;
+            border-top: 2px solid #ccc;
+            padding-top: 20px;
+        }
+        .report-section {
+            margin-bottom: 15px;
+        }
+        .report-section h3 {
+            color: #555;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+        .report-section p {
+            margin: 5px 0;
+        }
+        #loading {
+            display: none;
+            color: #555;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Medical Report Generator</h1>
+        <div class="section">
+            <label for="imageInput1">Upload Assessment Page 1:</label>
+            <input type="file" id="imageInput1" accept="image/*" onchange="previewImage(event, 'preview1')">
+            <img id="preview1" class="preview" alt="Page 1 Preview">
+        </div>
+        <div class="section">
+            <label for="imageInput2">Upload Assessment Page 2:</label>
+            <input type="file" id="imageInput2" accept="image/*" onchange="previewImage(event, 'preview2')">
+            <img id="preview2" class="preview" alt="Page 2 Preview">
+        </div>
+        <button onclick="generateReport()">Generate Report</button>
+        <div id="loading">Processing images, please wait...</div>
+        <div id="report">
+            <h2>Generated Medical Report</h2>
+            <div class="report-section">
+                <h3>Referral Details</h3>
+                <p><strong>Referred on:</strong> <span id="referredOn"></span></p>
+                <p><strong>Diagnosis:</strong> <span id="diagnosis"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Reason for Referral</h3>
+                <p><span id="reasonForReferral"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Clinical Information</h3>
+                <p><span id="clinicalInfo"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Premorbid Social Status</h3>
+                <p><strong>Social support:</strong> <span id="socialSupport"></span></p>
+                <p><strong>Life role:</strong> <span id="lifeRole"></span></p>
+                <p><strong>Attendant:</strong> <span id="attendant"></span></p>
+                <p><strong>Premorbid ADL:</strong> <span id="premorbidADL"></span></p>
+                <p><strong>Premorbid IADL:</strong> <span id="premorbidIADL"></span></p>
+                <p><strong>Activity level:</strong> <span id="activityLevel"></span></p>
+                <p><strong>Mobility status:</strong> Indoor - <span id="mobilityIndoor"></span>, Outdoor - <span id="mobilityOutdoor"></span></p>
+                <p><strong>Community Service:</strong> <span id="communityService"></span></p>
+                <p><strong>Financial status:</strong> <span id="financialStatus"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Home Environment</h3>
+                <p><strong>Accommodation:</strong> <span id="accommodation"></span></p>
+                <p><strong>Accessibility:</strong> <span id="accessibility"></span></p>
+                <p><strong>Toilet:</strong> <span id="toilet"></span></p>
+                <p><strong>Handrails:</strong> <span id="handrails"></span></p>
+                <p><strong>Bathroom:</strong> <span id="bathroom"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Progress</h3>
+                <p><strong>Initial assessment / Re-assessment done at (time):</strong> <span id="assessmentTime"></span></p>
+                <h4>Observation Examination</h4>
+                <p><strong>Vital signs:</strong> <span id="vitalSigns"></span></p>
+                <p><strong>BP:</strong> <span id="bp"></span>, <strong>HR:</strong> <span id="hr"></span></p>
+                <p><strong>SpO2:</strong> <span id="spo2"></span></p>
+                <p><strong>Level of consciousness:</strong> <span id="consciousness"></span></p>
+                <p><strong>Followed command:</strong> <span id="followedCommand"></span></p>
+                <p><strong>Vision:</strong> <span id="vision"></span></p>
+                <p><strong>Hearing:</strong> <span id="hearing"></span></p>
+                <p><strong>Speech:</strong> <span id="speech"></span></p>
+                <p><strong>Chief complaint:</strong> <span id="chiefComplaint"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Physical Examination</h3>
+                <p><strong>Limbs power:</strong> Upper limb - Left: <span id="upperLimbLeft"></span>, Right: <span id="upperLimbRight"></span></p>
+                <p>Lower limb - Left: <span id="lowerLimbLeft"></span>, Right: <span id="lowerLimbRight"></span></p>
+                <p><strong>MMT:</strong> <span id="mmt"></span></p>
+                <p><strong>Muscle tone:</strong> Upper limb - Left: <span id="muscleToneULLeft"></span>, Right: <span id="muscleToneULRight"></span></p>
+                <p>Lower limb - Left: <span id="muscleToneLLLeft"></span>, Right: <span id="muscleToneLLRight"></span></p>
+                <p><strong>AROM:</strong> Upper limb - Left: S: <span id="aromULLeftS"></span>, E: <span id="aromULLeftE"></span>, W: <span id="aromULLeftW"></span></p>
+                <p>Right: S: <span id="aromULRightS"></span>, E: <span id="aromULRightE"></span>, W: <span id="aromULRightW"></span></p>
+                <p>Lower limb - Left: H: <span id="aromLLLeftH"></span>, K: <span id="aromLLLeftK"></span>, A: <span id="aromLLLeftA"></span></p>
+                <p>Right: H: <span id="aromLLRightH"></span>, K: <span id="aromLLRightK"></span>, A: <span id="aromLLRightA"></span></p>
+                <p><strong>Sensation:</strong> <span id="sensation"></span></p>
+                <p><strong>Sitting balance (Static):</strong> <span id="sittingBalanceStatic"></span>, (Dynamic): <span id="sittingBalanceDynamic"></span></p>
+                <p><strong>Standing balance (Static):</strong> <span id="standingBalanceStatic"></span>, (Dynamic): <span id="standingBalanceDynamic"></span></p>
+                <p><strong>Functional Mobility:</strong> Bed mobility: <span id="bedMobility"></span></p>
+                <p>Lying <-> sitting: <span id="lyingSitting"></span></p>
+                <p>Bed <-> chair: <span id="bedChair"></span></p>
+                <p>Sit <-> stand: <span id="sitStand"></span></p>
+            </div>
+            <div class="report-section">
+                <h3>Activities of Daily Living</h3>
+                <p><strong>Modified Barthel Index (MBI):</strong> <span id="mbi"></span></p>
+                <p><strong>Feeding:</strong> <span id="feeding"></span></p>
+                <p><strong>Grooming:</strong> <span id="grooming"></span></p>
+                <p><strong>Dressing:</strong> <span id="dressing"></span></p>
+                <p><strong>Toileting:</strong> <span id="toileting"></span></p>
+                <p><strong>Bathing:</strong> <span id="bathing"></span></p>
+                <p><strong>Bed/chair transfers:</strong> <span id="bedChairTransfers"></span></p>
+                <p><strong>Ambulation:</strong> <span id="ambulation"></span></p>
+                <p><strong>Stairs:</strong> <span id="stairs"></span></p>
+                <p><strong>Bowel Control:</strong> <span id="bowelControl"></span></p>
+                <p><strong>Bladder Control:</strong> <span id="bladderControl"></span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function previewImage(event, previewId) {
+            const preview = document.getElementById(previewId);
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        async function generateReport() {
+            const imageInput1 = document.getElementById('imageInput1');
+            const imageInput2 = document.getElementById('imageInput2');
+            const loading = document.getElementById('loading');
+            const reportDiv = document.getElementById('report');
+
+-------imageInput1.files.length === 0 || imageInput2.files.length === 0) {
+                alert('Please upload both assessment pages.');
+                return;
+            }
+
+            loading.style.display = 'block';
+            reportDiv.style.display = 'none';
+
+            try {
+                // Process both images with Tesseract.js
+                const text1 = await processImage(imageInput1.files[0]);
+                const text2 = await processImage(imageInput2.files[0]);
+
+                // Combine text from both pages
+                const combinedText = text1 + '\n' + text2;
+
+                // Parse the combined text to extract data
+                const data = parseText(combinedText);
+
+                // Populate the report with extracted data
+                populateReport(data);
+
+                // Show the report
+                reportDiv.style.display = 'block';
+                window.scrollTo(0, reportDiv.offsetTop);
+            } catch (error) {
+                console.error('Error processing images:', error);
+                alert('Error processing images. Please try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        async function processImage(file) {
+            // Create an image element to resize the image for better OCR performance
+            const img = new Image();
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            return new Promise((resolve, reject) => {
+                img.onload = async () => {
+                    // Resize image to improve OCR performance
+                    const maxWidth = 800;
+                    const scale = maxWidth / img.width;
+                    canvas.width = maxWidth;
+                    canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    try {
+                        const { data: { text } } = await Tesseract.recognize(
+                            canvas.toDataURL('image/png'),
+                            'eng',
+                            { logger: (m) => console.log(m) }
+                        );
+                        resolve(text);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                img.onerror = reject;
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function parseText(text) {
+            const data = {};
+
+            // Helper function to extract text after a label
+            const extractAfterLabel = (label) => {
+                const regex = new RegExp(`${label}\\s*[:.](.*?)(\\n|$)`, 'i');
+                const match = text.match(regex);
+                return match ? match[1].trim() : '';
+            };
+
+            // Helper function to extract checked options
+            const extractChecked = (label, options) => {
+                const regex = new RegExp(`${label}\\s*[:.](.*?)(?:\\n|$)`, 'i');
+                const match = text.match(regex);
+                if (!match) return '';
+                const line = match[1].toLowerCase();
+                for (const option of options) {
+                    if (line.includes(option.toLowerCase()) && (line.includes('(D)') || line.includes('✓') || line.includes('O'))) {
+                        return option;
+                    }
+                }
+                return '';
+            };
+
+            // Extract specific fields from the text
+            data.referredOn = extractAfterLabel('Date of 1st Contact') || 'Not found';
+            data.diagnosis = extractAfterLabel('PRESENT DIAGNOSIS') || 'Not found';
+            data.reasonForReferral = extractAfterLabel('REASON OF ADMISSION') || 'Not found';
+            data.clinicalInfo = extractAfterLabel('Date of onset') || 'Not found';
+
+            // Premorbid Social Status
+            data.socialSupport = extractChecked('LIVING WITH', ['Alone', 'Caregiver']);
+            data.lifeRole = extractChecked('LIFE ROLE', ['Working', 'Caregiver', 'Homemaker']);
+            data.attendant = extractChecked('ATTENDANT', ['Daytime alone', 'Night time alone']);
+            data.premorbidADL = extractAfterLabel('PREMORBID STATUS.*ADL').split('(').filter(s => s.includes(')')).map(s => s.replace(')', '')).join(', ') || 'Not found';
+            data.activityLevel = extractChecked('Work history', ['Outdoor', 'Chair-bound']);
+            data.mobilityIndoor = extractChecked('MOBILITY STATUS.*Indoor', ['Unaided', 'Stick']);
+            data.mobilityOutdoor = extractChecked('MOBILITY STATUS.*Outdoor', ['Unaided', 'Stick']);
+            data.communityService = extractChecked('COMMUNITY SERVICE', ['Homehelper', 'Elderly center']);
+            data.financialStatus = extractChecked('FINANCIAL ASSISTANCE', ['Self support', 'OAA']);
+
+            // Home Environment
+            data.accommodation = extractChecked('ACCOMMODATION', ['Public housing estate', 'Private flat']);
+            data.accessibility = extractChecked('ACCESSIBILITY', ['Lift-landing', 'Non lift-landing']);
+            data.toilet = extractChecked('TOILET', ['Sitting', 'Squat']);
+            data.bathroom = extractChecked('BATHROOM', ['Shower', 'Tub']).concat(extractChecked('BATHROOM', ['Hot water system', 'Boil water'])).trim() || 'Not found';
+
+            // Progress
+            data.vitalSigns = extractAfterLabel('Vital signs') || 'Not found';
+            data.consciousness = extractChecked('MENTAL STATUS', ['Alert', 'Conscious']);
+            data.sittingBalanceDynamic = extractAfterLabel('Sitting bal.*Dynamic') || 'Not found';
+            data.standingBalanceDynamic = extractAfterLabel('Standing bal.*Dynamic') || 'Not found';
+            data.bedMobility = extractAfterLabel('Bed mobility') || 'Not found';
+            data.lyingSitting = extractAfterLabel('Lying <-> sitting') || 'Not found';
+            data.bedChair = extractAfterLabel('Bed <-> chair') || 'Not found';
+            data.sitStand = extractAfterLabel('Sit to stand') || 'Not found';
+
+            // Physical Examination
+            const limbPowerMatch = text.match(/LIMB POWER.*Upper limb\s*L\s*(\d)\s*R\s*(\d).*Lower limb\s*L\s*(\d)\s*R\s*(\d)/is);
+            if (limbPowerMatch) {
+                data.upperLimbLeft = limbPowerMatch[1];
+                data.upperLimbRight = limbPowerMatch[2];
+                data.lowerLimbLeft = limbPowerMatch[3];
+                data.lowerLimbRight = limbPowerMatch[4];
+            }
+
+            const muscleToneMatch = text.match(/Muscle tone.*Upper limb\s*L\s*([^\n]*)\s*R\s*([^\n]*).*Lower limb\s*L\s*([^\n]*)\s*R\s*([^\n]*)/is);
+            if (muscleToneMatch) {
+                data.muscleToneULLeft = muscleToneMatch[1].trim();
+                data.muscleToneULRight = muscleToneMatch[2].trim();
+                data.muscleToneLLLeft = muscleToneMatch[3].trim();
+                data.muscleToneLLRight = muscleToneMatch[4].trim();
+            }
+
+            const aromMatch = text.match(/AROM.*Upper limb\s*L\s*S: ([^\s]*)\s*E: ([^\s]*)\s*W: ([^\s]*)\s*R\s*S: ([^\s]*)\s*E: ([^\s]*)\s*W: ([^\s]*).*Lower limb\s*L\s*H: ([^\s]*)\s*K: ([^\s]*)\s*A: ([^\s]*)\s*R\s*H: ([^\s]*)\s*K: ([^\s]*)\s*A: ([^\s]*)/is);
+            if (aromMatch) {
+                data.aromULLeftS = aromMatch[1];
+                data.aromULLeftE = aromMatch[2];
+                data.aromULLeftW = aromMatch[3];
+                data.aromULRightS = aromMatch[4];
+                data.aromULRightE = aromMatch[5];
+                data.aromULRightW = aromMatch[6];
+                data.aromLLLeftH = aromMatch[7];
+                data.aromLLLeftK = aromMatch[8];
+                data.aromLLLeftA = aromMatch[9];
+                data.aromLLRightH = aromMatch[10];
+                data.aromLLRightK = aromMatch[11];
+                data.aromLLRightA = aromMatch[12];
+            }
+
+            // Activities of Daily Living
+            data.mbi = extractAfterLabel('TOTAL.*MBI') || 'Not found';
+            data.feeding = extractAfterLabel('Feeding') || 'Not found';
+            data.grooming = extractAfterLabel('Personal hygiene') || extractAfterLabel('Grooming') || 'Not found';
+            data.dressing = extractAfterLabel('Dressing') || 'Not found';
+            data.toileting = extractAfterLabel('Toileting') || 'Not found';
+            data.bathing = extractAfterLabel('Bathing') || 'Not found';
+            data.bedChairTransfers = extractAfterLabel('Bed/chair transfer') || 'Not found';
+            data.ambulation = extractAfterLabel('Ambulation') || 'Not found';
+            data.stairs = extractAfterLabel('Stairs') || 'Not found';
+            data.bowelControl = extractAfterLabel('Bowel control') || 'Not found';
+            data.bladderControl = extractAfterLabel('Bladder control') || 'Not found';
+
+            return data;
+        }
+
+        function populateReport(data) {
+            // Populate the report fields with extracted data
+            document.getElementById('referredOn').textContent = data.referredOn || 'Not specified';
+            document.getElementById('diagnosis').textContent = data.diagnosis || 'Not specified';
+            document.getElementById('reasonForReferral').textContent = data.reasonForReferral || 'Not specified';
+            document.getElementById('clinicalInfo').textContent = data.clinicalInfo || 'Not specified';
+
+            document.getElementById('socialSupport').textContent = data.socialSupport || 'Not specified';
+            document.getElementById('lifeRole').textContent = data.lifeRole || 'Not specified';
+            document.getElementById('attendant').textContent = data.attendant || 'Not specified';
+            document.getElementById('premorbidADL').textContent = data.premorbidADL || 'Not specified';
+            document.getElementById('premorbidIADL').textContent = data.premorbidIADL || 'Not specified';
+            document.getElementById('activityLevel').textContent = data.activityLevel || 'Not specified';
+            document.getElementById('mobilityIndoor').textContent = data.mobilityIndoor || 'Not specified';
+            document.getElementById('mobilityOutdoor').textContent = data.mobilityOutdoor || 'Not specified';
+            document.getElementById('communityService').textContent = data.communityService || 'Not specified';
+            document.getElementById('financialStatus').textContent = data.financialStatus || 'Not specified';
+
+            document.getElementById('accommodation').textContent = data.accommodation || 'Not specified';
+            document.getElementById('accessibility').textContent = data.accessibility || 'Not specified';
+            document.getElementById('toilet').textContent = data.toilet || 'Not specified';
+            document.getElementById('handrails').textContent = data.handrails || 'Not specified';
+            document.getElementById('bathroom').textContent = data.bathroom || 'Not specified';
+
+            document.getElementById('vitalSigns').textContent = data.vitalSigns || 'Not specified';
+            document.getElementById('consciousness').textContent = data.consciousness || 'Not specified';
+            document.getElementById('sittingBalanceDynamic').textContent = data.sittingBalanceDynamic || 'Not specified';
+            document.getElementById('standingBalanceDynamic').textContent = data.standingBalanceDynamic || 'Not specified';
+            document.getElementById('bedMobility').textContent = data.bedMobility || 'Not specified';
+            document.getElementById('lyingSitting').textContent = data.lyingSitting || 'Not specified';
+            document.getElementById('bedChair').textContent = data.bedChair || 'Not specified';
+            document.getElementById('sitStand').textContent = data.sitStand || 'Not specified';
+
+            document.getElementById('upperLimbLeft').textContent = data.upperLimbLeft || 'Not specified';
+            document.getElementById('upperLimbRight').textContent = data.upperLimbRight || 'Not specified';
+            document.getElementById('lowerLimbLeft').textContent = data.lowerLimbLeft || 'Not specified';
+            document.getElementById('lowerLimbRight').textContent = data.lowerLimbRight || 'Not specified';
+            document.getElementById('muscleToneULLeft').textContent = data.muscleToneULLeft || 'Not specified';
+            document.getElementById('muscleToneULRight').textContent = data.muscleToneULRight || 'Not specified';
+            document.getElementById('muscleToneLLLeft').textContent = data.muscleToneLLLeft || 'Not specified';
+            document.getElementById('muscleToneLLRight').textContent = data.muscleToneLLRight || 'Not specified';
+            document.getElementById('aromULLeftS').textContent = data.aromULLeftS || 'Not specified';
+            document.getElementById('aromULLeftE').textContent = data.aromULLeftE || 'Not specified';
+            document.getElementById('aromULLeftW').textContent = data.aromULLeftW || 'Not specified';
+            document.getElementById('aromULRightS').textContent = data.aromULRightS || 'Not specified';
+            document.getElementById('aromULRightE').textContent = data.aromULRightE || 'Not specified';
+            document.getElementById('aromULRightW').textContent = data.aromULRightW || 'Not specified';
+            document.getElementById('aromLLLeftH').textContent = data.aromLLLeftH || 'Not specified';
+            document.getElementById('aromLLLeftK').textContent = data.aromLLLeftK || 'Not specified';
+            document.getElementById('aromLLLeftA').textContent = data.aromLLLeftA || 'Not specified';
+            document.getElementById('aromLLRightH').textContent = data.aromLLRightH || 'Not specified';
+            document.getElementById('aromLLRightK').textContent = data.aromLLRightK || 'Not specified';
+            document.getElementById('aromLLRightA').textContent = data.aromLLRightA || 'Not specified';
+
+            document.getElementById('mbi').textContent = data.mbi || 'Not specified';
+            document.getElementById('feeding').textContent = data.feeding || 'Not specified';
+            document.getElementById('grooming').textContent = data.grooming || 'Not specified';
+            document.getElementById('dressing').textContent = data.dressing || 'Not specified';
+            document.getElementById('toileting').textContent = data.toileting || 'Not specified';
+            document.getElementById('bathing').textContent = data.bathing || 'Not specified';
+            document.getElementById('bedChairTransfers').textContent = data.bedChairTransfers || 'Not specified';
+            document.getElementById('ambulation').textContent = data.ambulation || 'Not specified';
+            document.getElementById('stairs').textContent = data.stairs || 'Not specified';
+            document.getElementById('bowelControl').textContent = data.bowelControl || 'Not specified';
+            document.getElementById('bladderControl').textContent = data.bladderControl || 'Not specified';
+        }
+    </script>
+</body>
+</html>
